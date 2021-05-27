@@ -4,9 +4,12 @@
 include windows.inc
 include user32.inc
 include kernel32.inc
+include shell32.inc
 
 includelib user32.lib
 includelib kernel32.lib
+includelib shell32.lib
+
 
 .data
 
@@ -16,12 +19,18 @@ includelib kernel32.lib
 	szOutputPath db "out.txt",0  			;duong dan file output
 	szOutputString	db 100 dup (0)				;chuoi de in ra file output
 	szInputString	db 100 dup (0)				;chuoi de doc tu file input
+	
+	applicationName db "C:\WINDOWS\system32\notepad.exe",0
 	newLine db 0ah, 0
 	cap db "Thong bao", 0
 	mess1 db "Ban co muon show noi dung out.txt!!!", 0
+	dot db ".", 0
 	
 	
 	lpFindFile WIN32_FIND_DATA <>
+	startUpInfo STARTUPINFO <>
+	processInfo PROCESS_INFORMATION <>
+	openBuff OFSTRUCT <>
 .code
 start:
 	push offset szInputString
@@ -38,11 +47,23 @@ start:
 	push 0
 	call MessageBox
 	
+	cmp eax, 0
+	je _exit
 	
+	push 1						;showcmd
+	push 0						;lpDirectory
+	push 0						;lpParametter
+	push offset szOutputPath	;lpFile
+	push 0						;lpOperation
+	push 0						;hwnd
+	call OpenAPP
+	
+_exit:	
 	push 0
 	call ExitProcess
-
+	
 FindFile proc
+	;prameter : fileName, struct win32_find_data
 	
 	push ebp
 	mov ebp, esp
@@ -53,6 +74,10 @@ FindFile proc
 	call FindFirstFile
 	mov [ebp - 4], eax						;Hfile = eax
 	
+	
+	
+	;------------GHI VAO FILE
+	
 	push offset lpFindFile.cFileName
 	push offset szOutputPath
 	call WriteFileOutput
@@ -60,16 +85,50 @@ FindFile proc
 	push offset newLine					; new line
 	push offset szOutputPath				;out.txt
 	call WriteFileOutput
+
+	;----------KIEM TRA XEM LA FILE HAY FOLDER
 	
-_loop1:	
+	mov eax, lpFindFile.dwFileAttributes
+	cmp eax, FILE_ATTRIBUTE_DIRECTORY							;the handle that identifies a directory
+	jne _loop1								; neu k phai folder thi find next file
 	
+	;----------DOI DUONG DAN VA GOI LAI
+	PUSH  [ebp + 12]
+	call lstrlen							; eax bang do dai dirName
+	
+	lea edx, [ebp + 12]
+	
+	mov byte ptr [edx + eax], 5ch				; * thanh \
+	
+	push offset lpFindFile.cFileName
+	push [ebp + 12]
+	call lstrcat 
+	
+	PUSH  [ebp + 12]
+	call lstrlen							; eax bang do dai dirName
+	
+	inc eax
+	lea edx, [ebp + 12]
+	mov byte ptr [edx + eax], 5ch				; 0 thanh *
+	inc eax
+	mov byte ptr [edx + eax], 0				; vi tri cuoi string thanh null
+	
+	push [ebp + 12]
+	push [ebp + 8]
+	call FindFile
+	
+	;-----------TIM FILE TIEP THEO
+	
+_loop1:
+
 	push [ebp + 8]							;lpFindFile
 	push [ebp - 4]							;push hFile
 	call FindNextFile
 	
-	cmp eax, 0
-	je _exit
+	cmp eax, 0								;Kiem tra xem da het file chua
+	je _return1
 	
+	;----------GHI VAO FILE
 	push offset lpFindFile.cFileName	;fileName
 	push offset szOutputPath				;out.txt
 	call WriteFileOutput
@@ -78,15 +137,60 @@ _loop1:
 	push offset szOutputPath				;out.txt
 	call WriteFileOutput
 	
+	mov eax, lpFindFile.dwFileAttributes
+	cmp eax, 10h							;the handle that identifies a directory
+	jne _loop1								; neu k phai folder thi find next file
 	
-	jmp _loop1
-_exit:
+	;----------DOI DUONG DAN VA GOI LAI
+	
+	PUSH  [ebp + 12]
+	call lstrlen							; eax bang do dai dirName
+	
+	lea edx, [ebp + 12]
+	
+	mov byte ptr [edx + eax], 5ch				; * thanh \
+	
+	push offset lpFindFile.cFileName
+	push [ebp + 12]
+	call lstrcat 
+	
+	PUSH  [ebp + 12]
+	call lstrlen							; eax bang do dai dirName
+	
+	inc eax
+	lea edx, [ebp + 12]
+	mov byte ptr [edx + eax], 5ch				; 0 thanh *
+	inc eax
+	mov byte ptr [edx + eax], 0				; vi tri cuoi string thanh null
+	
+	push [ebp + 12]
+	push [ebp + 8]
+	call FindFile
+_return1:
+	
+_exit1:
 	push [ebp - 4]							;push hFile
 	call FindClose							
 	leave
 	ret 8
 
 FindFile endp
+
+OpenAPP proc
+	push ebp
+	mov ebp, esp
+	
+	push [ebp + 28]
+	push [ebp + 24]
+	push [ebp + 20]
+	push [ebp + 16]
+	push [ebp + 12]
+	push [ebp + 8]
+	call ShellExecute
+	leave
+	ret 24
+
+OpenAPP endp
 
 ReadFileInput proc
 	; tham so: szInputString, szInputPath
